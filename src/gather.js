@@ -6,9 +6,12 @@
 // are written in place; lists, records and fields become wholes of their own, stored once and shared by
 // every whole that holds them. A long whole is gathered again into spans of GROUP_SIZE, and spans into
 // bigger spans, so finding one item jumps level by level (the junctions) instead of walking the line.
+//
+// options.shape (optional): given a list of numbers, returns { rule, params, residual } when a registered
+// rule can rebuild it more cheaply, or null. The rule is stored instead of the numbers (see derivers.js).
 
 const { putPoint } = require('./store');
-const { makeAtom, makeWhole } = require('./points');
+const { makeAtom, makeWhole, makeDerived } = require('./points');
 
 const GROUP_SIZE = 16;
 
@@ -18,8 +21,8 @@ function isAtomValue(value) {
 }
 
 // A part as it sits inside a whole: a single value in place, or the key of the whole it is.
-function gatherPart(store, value) {
-  const part = isAtomValue(value) ? { v: value } : gatherWhole(store, value);
+function gatherPart(store, value, options) {
+  const part = isAtomValue(value) ? { v: value } : gatherWhole(store, value, options);
   return part;
 }
 
@@ -44,17 +47,25 @@ function gatherParts(store, shape, parts) {
   return wholeKey;
 }
 
-function gatherWhole(store, value) {
-  let key;
-  if (Array.isArray(value)) key = gatherParts(store, 'list', value.map(item => gatherPart(store, item)));
-  else key = gatherParts(store, 'record', Object.entries(value)
-    .map(([name, item]) => gatherParts(store, 'field', [{ v: name }, gatherPart(store, item)])));
+// A list of numbers may be rebuilt by a rule instead of stored number by number.
+function shapeNumbers(store, list, options) {
+  const numeric = !!(options && options.shape) && list.length > 0 && list.every(item => typeof item === 'number');
+  const shaped = numeric ? options.shape(list) : null;
+  const key = shaped ? putPoint(store, makeDerived(shaped.rule, list.length, shaped.params, shaped.residual)) : null;
+  return key;
+}
+
+function gatherWhole(store, value, options) {
+  let key = Array.isArray(value) ? shapeNumbers(store, value, options) : null;
+  if (!key && Array.isArray(value)) key = gatherParts(store, 'list', value.map(item => gatherPart(store, item, options)));
+  else if (!key) key = gatherParts(store, 'record', Object.entries(value)
+    .map(([name, item]) => gatherParts(store, 'field', [{ v: name }, gatherPart(store, item, options)])));
   return key;
 }
 
 // The seed of any value. A single value on its own is stored as an atom so it still has a key.
-function gatherValue(store, value) {
-  const key = isAtomValue(value) ? putPoint(store, makeAtom(value)) : gatherWhole(store, value);
+function gatherValue(store, value, options = {}) {
+  const key = isAtomValue(value) ? putPoint(store, makeAtom(value)) : gatherWhole(store, value, options);
   return key;
 }
 

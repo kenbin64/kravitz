@@ -6,6 +6,7 @@ const { createStore, countPoints, measureBytes } = require('./store');
 const { gatherValue } = require('./gather');
 const { bloomKey, bloomPart } = require('./bloom');
 const { findPart } = require('./find');
+const { registerDeriver } = require('./derivers');
 
 function findItem(store, seedKey, index, counter = { steps: 0 }) {
   const part = findPart(store, seedKey, index, counter);
@@ -13,4 +14,4 @@ function findItem(store, seedKey, index, counter = { steps: 0 }) {
   return item;
 }
 
-module.exports = { createStore, gather: gatherValue, bloom: bloomKey, findItem, countPoints, measureBytes };
+module.exports = { createStore, gather: gatherValue, bloom: bloomKey, findItem, countPoints, measureBytes, registerDeriver };

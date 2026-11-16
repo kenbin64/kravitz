@@ -3,6 +3,7 @@
 // whole's parts in order and opening each whole it names. Every stored point read counts as one step.
 
 const { readPoint } = require('./store');
+const { rebuildDerived } = require('./derivers');
 
 const isInline = (part) => typeof part === 'object' && part !== null;
 
@@ -31,6 +32,7 @@ function bloomKey(store, key, counter = { steps: 0 }) {
   const point = readPoint(store, key, counter);
   let value;
   if (point.kind === 'atom') value = point.value;
+  else if (point.kind === 'derived') value = rebuildDerived(point);
   else if (point.shape === 'record') value = Object.fromEntries(collectItems(store, point, counter).map(field => bloomPart(store, field, counter)));
   else value = collectItems(store, point, counter).map(part => bloomPart(store, part, counter));   // list, or a field: [name, value]
   return value;

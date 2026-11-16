@@ -1,8 +1,9 @@
 // points.js
-// One job: make the two kinds of stored point. Each key comes from the point's own content.
+// One job: make the three kinds of stored point. Each key comes from the point's own content.
 //
-//   atom   one single thing on its own (only stored when a seed IS a single value)
-//   whole  many parts gathered into one: its shape, how many items it covers, and its parts in order
+//   atom     one single thing on its own (only stored when a seed IS a single value)
+//   whole    many parts gathered into one: its shape, how many items it covers, and its parts in order
+//   derived  a whole rebuilt by a registered rule from a few numbers and a residual (see derivers.js)
 //
 // A part's neighbour is the next position, so no pointer is stored for it (version 2, 2026-11-15:
 // "coordinates are memory"; the first version stored a link point per item and was 10 to 20 times too big).
@@ -25,4 +26,11 @@ function makeWhole(shape, count, parts) {
   return whole;
 }
 
-module.exports = { makeAtom, makeWhole };
+// A whole that a registered rule rebuilds from a few numbers plus what the rule got wrong (the residual).
+function makeDerived(rule, count, params, residual) {
+  const content = { kind: 'derived', rule, count, params, residual };
+  const derived = { key: deriveKey(content), ...content };
+  return derived;
+}
+
+module.exports = { makeAtom, makeWhole, makeDerived };

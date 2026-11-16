@@ -5,13 +5,17 @@
 
 const { readPoint } = require('./store');
 const { isSpan, isInline } = require('./bloom');
+const { rebuildDerived } = require('./derivers');
 
 // Returns the part ({ v } or a key) at position `index` (0 first) inside the whole `wholeKey`, or null.
+// A derived whole is rebuilt from its rule, then indexed.
 function findPart(store, wholeKey, index, counter = { steps: 0 }) {
   let container = readPoint(store, wholeKey, counter);
   let remaining = index;
   let found = null;
-  let searching = !!container && container.kind === 'whole' && index >= 0 && index < container.count;
+  const inRange = !!container && index >= 0 && index < container.count;
+  if (inRange && container.kind === 'derived') found = { v: rebuildDerived(container)[index] };
+  let searching = inRange && container.kind === 'whole';
   while (searching) {
     let descended = false;
     for (let i = 0; i < container.parts.length && !descended && searching; i++) {
