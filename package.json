@@ -1,0 +1,12 @@
+{
+  "name": "seed-store",
+  "version": "0.2.0",
+  "private": true,
+  "description": "Prototype geometric datastore: gather any value into one seed, bloom it back exactly, find one item through junctions.",
+  "main": "src/index.js",
+  "scripts": {
+    "test": "node test/seed-store.test.js",
+    "bench": "node bench/bench.js"
+  },
+  "license": "UNLICENSED"
+}
