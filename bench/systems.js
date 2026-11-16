@@ -4,6 +4,7 @@
 //   zstd file      the whole dataset as one JSON file, compressed with zstd level 19
 //   SQLite rows    a normal table, one row per value or record, primary key (how most apps store data)
 //   SQLite docs    one JSON document per item, primary key (how a document database stores data)
+//   Git-style      content-addressed objects compressed with zlib, nested parts stored once (dedupe tools)
 //   kravitz        the seed store, its points kept in an SQLite table by key, so it is on disk too
 //
 // Measured for each: size on disk, time to load the data, time to read one item (300 random, averaged),
@@ -96,6 +97,31 @@ function sqliteDocs(data, kind) {
   return { file, readOne: (i) => JSON.parse(one.get(i).doc), readAll: () => all.all().map(r => JSON.parse(r.doc)), db };
 }
 
+// Git-style object store: every item is a tree object; each nested list or record inside it is a blob object;
+// every object is keyed by its content and compressed with zlib, as Git does, so equal parts are stored once.
+// The list of item keys (the manifest) is read once and kept in memory, the way Git keeps its current tree.
+function gitStyle(data, kind) {
+  const { file, db } = openDb('git-' + kind);
+  db.exec('CREATE TABLE objects (key TEXT PRIMARY KEY, blob BLOB) WITHOUT ROWID');
+  const insert = db.prepare('INSERT OR IGNORE INTO objects VALUES (?, ?)');
+  const put = (text) => { const key = require('crypto').createHash('sha1').update(text).digest('hex'); insert.run(key, zlib.deflateSync(Buffer.from(text))); return key; };
+  const nested = (v) => v !== null && typeof v === 'object';
+  db.exec('BEGIN');
+  const manifest = data.map(item => {
+    const tree = Array.isArray(item) ? item.map(v => (nested(v) ? { blob: put(JSON.stringify(v)) } : v))
+      : Object.fromEntries(Object.entries(item).map(([k, v]) => [k, nested(v) ? { blob: put(JSON.stringify(v)) } : v]));
+    return put(JSON.stringify(tree));
+  });
+  put(JSON.stringify(manifest));
+  db.exec('COMMIT');
+  finish(db);
+  const get = db.prepare('SELECT blob FROM objects WHERE key = ?');
+  const read = (key) => JSON.parse(zlib.inflateSync(get.get(key).blob).toString());
+  const open = (v) => (v && typeof v === 'object' && 'blob' in v ? read(v.blob) : v);
+  const readOne = (i) => { const tree = read(manifest[i]); return Array.isArray(tree) ? tree.map(open) : Object.fromEntries(Object.entries(tree).map(([k, v]) => [k, open(v)])); };
+  return { file, readOne, readAll: () => data.map((_, i) => readOne(i)), db };
+}
+
 // The seed store, its points written to an SQLite table by key and read back from disk point by point.
 function kravitzOnDisk(data, kind) {
   const memory = kravitz.createStore();
@@ -139,6 +165,7 @@ for (const [kind, title, data] of datasets) {
     measure('zstd file', () => zstdFile(data), data),
     measure('SQLite rows', () => sqliteRows(data, kind), data),
     measure('SQLite docs', () => sqliteDocs(data, kind), data),
+    measure('Git-style', () => gitStyle(data, kind), data),
     measure('kravitz', () => kravitzOnDisk(data, kind), data),
   ];
   for (const r of rows) console.log(r.label.padEnd(16) + pad(r.bytes.toLocaleString(), 12) + pad(r.loadMs.toFixed(0), 10) + pad(r.oneUs.toFixed(0), 13) + pad(r.allMs.toFixed(0), 13) + pad(r.correct ? 'yes' : 'NO', 7));

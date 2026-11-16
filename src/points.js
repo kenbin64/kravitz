@@ -1,13 +1,18 @@
 // points.js
-// One job: make the three kinds of stored point. Each key comes from the point's own content.
+// One job: make the three kinds of stored point.
 //
 //   atom     one single thing on its own (only stored when a seed IS a single value)
 //   whole    many parts gathered into one: its shape, how many items it covers, and its parts in order
 //   derived  a whole rebuilt by a registered rule from a few numbers and a residual (see derivers.js)
 //
-// A part's neighbour is the next position, so no pointer is stored for it (version 2, 2026-11-15:
-// "coordinates are memory"; the first version stored a link point per item and was 10 to 20 times too big).
-// A part is either a single value written in place, { v: value }, or the key of another whole.
+// A part inside a whole is one of:
+//   { v: value }          a single value, in place
+//   { w: body }           a whole used only once, carried inside this point (the width crammed into the corner)
+//   "key"                 a whole used more than once, stored once as its own point and referenced
+//   { s: key, n: count }  a junction on the length axis: a span of items, and how many it covers
+//
+// The key of a stored whole is its content key (see gather.js), so the same content always has the same key,
+// whether a copy of it is carried inside some other point or not.
 
 const { deriveKey } = require('./key');
 
@@ -18,11 +23,9 @@ function makeAtom(value) {
   return atom;
 }
 
-// shape: 'list' (an array), 'record' (an object), 'field' (a name and its value), 'span' (a junction:
-// a run of items grouped so a long whole can be jumped instead of walked).
-function makeWhole(shape, count, parts) {
-  const content = { kind: 'whole', shape, count, parts };
-  const whole = { key: deriveKey(content), ...content };
+// shape: 'list' (an array), 'record' (an object), 'field' (a name and its value), 'span' (a junction).
+function makeWhole(key, shape, count, parts) {
+  const whole = { key, kind: 'whole', shape, count, parts };
   return whole;
 }
 

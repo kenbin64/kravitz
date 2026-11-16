@@ -57,9 +57,20 @@ console.log('\n-- 2. the same content is stored once --');
   const second = store.gather(s, { ...record });
   check(first === second, 'gathering the same record again gives the same seed');
   check(store.countPoints(s) === pointsAfterOne, 'and adds no points', `${pointsAfterOne} -> ${store.countPoints(s)}`);
-  store.gather(s, { name: 'Bob', city: 'Provo', status: 'active' });
-  const added = store.countPoints(s) - pointsAfterOne;
-  check(added > 0 && added < pointsAfterOne, `a record sharing two fields adds only what is new (${added} of ${pointsAfterOne} points)`);
+}
+{
+  // Version 3: a whole used more than once, and big enough to be worth a lookup, is stored once and shared;
+  // a whole used once, or a tiny repeat, is carried inside the point that holds it (the corner holds its width).
+  const s = store.createStore();
+  const bigRow = Array.from({ length: 16 }, (_, i) => 'tile-' + (i % 5));
+  const level = { name: 'level-1', rows: [bigRow, [...bigRow], bigRow, ['small'], ['small']] };
+  const seed = store.gather(s, level);
+  check(same(store.bloom(s, seed), level), 'a level with a repeated row blooms exactly');
+  check(store.countPoints(s) === 2, `the big row used three times is stored once: ${store.countPoints(s)} points (the level and the row)`);
+  const root = s.points.get(seed);
+  const rows = root.parts.find(p => p && p.w && p.w.shape === 'list').w.parts;
+  check(rows.filter(p => typeof p === 'string').length === 3 && rows.filter(p => p.w).length === 2,
+    'the level points to the shared row three times and carries the tiny repeated row in place');
 }
 
 console.log('\n-- 3. find gets one item without blooming the rest --');
