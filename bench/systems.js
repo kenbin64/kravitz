@@ -122,18 +122,13 @@ function gitStyle(data, kind) {
   return { file, readOne, readAll: () => data.map((_, i) => readOne(i)), db };
 }
 
-// The seed store, its points written to an SQLite table by key and read back from disk point by point.
-function kravitzOnDisk(data, kind) {
-  const memory = kravitz.createStore();
-  const seed = kravitz.gather(memory, data);
-  const { file, db } = openDb('kravitz-' + kind);
-  db.exec('CREATE TABLE points (key TEXT PRIMARY KEY, point TEXT) WITHOUT ROWID');
-  const insert = db.prepare('INSERT INTO points VALUES (?, ?)');
-  db.exec('BEGIN'); for (const [key, point] of memory.points) insert.run(key, JSON.stringify(point)); db.exec('COMMIT');
-  finish(db);
-  const get = db.prepare('SELECT point FROM points WHERE key = ?');
-  const disk = { points: { get: (key) => { const row = get.get(key); return row ? JSON.parse(row.point) : undefined; }, has: () => true } };
-  return { file, readOne: (i) => kravitz.findItem(disk, seed, i), readAll: () => kravitz.bloom(disk, seed), db };
+// kravitz's own disk store: points in the compact byte form, keyed by 8 bytes, shared parts fetched together.
+function kravitzOnDisk(data, kind, spanSize) {
+  const file = tempFile(`kravitz-${kind}-${spanSize}`);
+  const disk = kravitz.openDiskStore(file);
+  const seed = disk.inOneGo(() => kravitz.gather(disk, data, { spanSize }));
+  disk.db.exec('VACUUM'); disk.db.exec('PRAGMA wal_checkpoint(TRUNCATE)');
+  return { file, readOne: (i) => kravitz.findItem(disk, seed, i), readAll: () => kravitz.bloom(disk, seed), db: disk.db };
 }
 
 // ── Measuring ────────────────────────────────────────────────────────────────────────────────────
@@ -141,7 +136,7 @@ function measure(label, build, data) {
   const t0 = process.hrtime.bigint();
   const system = build();
   const loadMs = msSince(t0);
-  const bytes = fs.statSync(system.file).size;
+  const bytes = [system.file, system.file + "-wal"].reduce((sum, f) => sum + (fs.existsSync(f) ? fs.statSync(f).size : 0), 0);   // the write-ahead log counts too
   const positions = Array.from({ length: 300 }, () => Math.floor(rnd() * data.length));
   let correct = true;
   const t1 = process.hrtime.bigint();
@@ -151,7 +146,7 @@ function measure(label, build, data) {
   if (JSON.stringify(system.readAll()) !== JSON.stringify(data)) correct = false;
   const allMs = msSince(t2);
   if (system.db) system.db.close();
-  fs.rmSync(system.file, { force: true });
+  for (const f of [system.file, system.file + "-wal", system.file + "-shm"]) fs.rmSync(f, { force: true });
   const row = { label, bytes, loadMs, oneUs, allMs, correct };
   return row;
 }
@@ -166,7 +161,9 @@ for (const [kind, title, data] of datasets) {
     measure('SQLite rows', () => sqliteRows(data, kind), data),
     measure('SQLite docs', () => sqliteDocs(data, kind), data),
     measure('Git-style', () => gitStyle(data, kind), data),
-    measure('kravitz', () => kravitzOnDisk(data, kind), data),
+    measure('kravitz span 64', () => kravitzOnDisk(data, kind, 64), data),
+    measure('kravitz span 16', () => kravitzOnDisk(data, kind, 16), data),
+    measure('kravitz span 8', () => kravitzOnDisk(data, kind, 8), data),
   ];
   for (const r of rows) console.log(r.label.padEnd(16) + pad(r.bytes.toLocaleString(), 12) + pad(r.loadMs.toFixed(0), 10) + pad(r.oneUs.toFixed(0), 13) + pad(r.allMs.toFixed(0), 13) + pad(r.correct ? 'yes' : 'NO', 7));
 }

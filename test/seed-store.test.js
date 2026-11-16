@@ -103,5 +103,36 @@ console.log('\n-- 4. different values never share a seed --');
   check(new Set(seeds).size === values.length, `${values.length} look-alike values get ${new Set(seeds).size} different seeds`);
 }
 
+console.log('\n-- 5. the compact byte form and the store on disk --');
+{
+  let codecBad = '';
+  for (let t = 0; t < 200 && !codecBad; t++) {
+    const s = store.createStore();
+    store.gather(s, randomValue(0), { spanSize: 4 + (t % 13) });
+    for (const point of s.points.values()) {
+      const back = store.decodePoint(store.encodePoint(point), point.key);
+      if (JSON.stringify(back) !== JSON.stringify(point)) { codecBad = `case ${t}: ${JSON.stringify(point).slice(0, 100)}`; break; }
+    }
+  }
+  check(!codecBad, 'every point of 200 random stores comes back from its bytes unchanged', codecBad);
+  const edge = [0, -0.5, 1e21, -(2 ** 60), 2 ** 51 - 1, -(2 ** 51) + 1, 'ünïcødé ✓', '', true, false, null];
+  const s = store.createStore();
+  check(same(store.bloom(s, store.gather(s, edge)), edge), 'edge values (large, negative, fractional, unicode) round-trip');
+
+  const os = require('os'), path = require('path'), fs = require('fs');
+  const file = path.join(os.tmpdir(), `kravitz-test-${process.pid}.db`);
+  const disk = store.openDiskStore(file);
+  const data = { name: 'game', levels: Array.from({ length: 300 }, (_, i) => ({ level: i, rows: [['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j'], ['k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't'], [i]] })) };
+  const seed = disk.inOneGo(() => store.gather(disk, data));
+  check(same(store.bloom(disk, seed), data), 'a store written to an SQLite file blooms back exactly');
+  const list = Array.from({ length: 3000 }, (_, i) => ({ id: i, tag: 't' + (i % 7) }));
+  const listSeed = disk.inOneGo(() => store.gather(disk, list, { spanSize: 16 }));
+  let diskWrong = '';
+  for (let i = 0; i < list.length && !diskWrong; i += 37) if (!same(store.findItem(disk, listSeed, i), list[i])) diskWrong = `position ${i}`;
+  check(!diskWrong, 'find on disk returns the right record', diskWrong);
+  disk.close();
+  for (const f of [file, file + '-wal', file + '-shm']) fs.rmSync(f, { force: true });
+}
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);

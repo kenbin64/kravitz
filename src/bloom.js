@@ -3,14 +3,15 @@
 // place opens with no further read; a shared whole is one read by its key; a junction on the length axis is
 // opened in place. Every stored point read counts as one step.
 
-const { readPoint } = require('./store');
+const { readPoint, prefetch } = require('./store');
 const { rebuildDerived } = require('./derivers');
 
 const isSpanPart = (part) => typeof part === 'object' && part !== null && 's' in part;
 
-// The items of a body, in order, with every junction opened.
+// The items of a body, in order, with every junction opened. The junctions of one level are fetched together.
 function collectItems(store, parts, counter) {
   const items = [];
+  prefetch(store, parts.filter(isSpanPart).map(part => part.s), counter);
   for (const part of parts) {
     if (isSpanPart(part)) items.push(...collectItems(store, readPoint(store, part.s, counter).parts, counter));
     else items.push(part);
@@ -20,6 +21,7 @@ function collectItems(store, parts, counter) {
 
 function valueOfBody(store, body, counter) {
   const items = collectItems(store, body.parts, counter);
+  prefetch(store, items.filter(item => typeof item === 'string'), counter);   // shared wholes arrive together
   let value;
   if (body.shape === 'record') {
     value = {};

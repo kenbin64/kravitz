@@ -7,6 +7,8 @@ const { gatherValue } = require('./gather');
 const { bloomKey, valueOfPart } = require('./bloom');
 const { findPart } = require('./find');
 const { registerDeriver } = require('./derivers');
+const { openDiskStore } = require('./diskstore');
+const { encodePoint, decodePoint } = require('./codec');
 
 function findItem(store, seedKey, index, counter = { steps: 0 }) {
   const part = findPart(store, seedKey, index, counter);
@@ -14,4 +16,5 @@ function findItem(store, seedKey, index, counter = { steps: 0 }) {
   return item;
 }
 
-module.exports = { createStore, gather: gatherValue, bloom: bloomKey, findItem, countPoints, measureBytes, registerDeriver };
+module.exports = { createStore, openDiskStore, gather: gatherValue, bloom: bloomKey, findItem, countPoints, measureBytes,
+  registerDeriver, encodePoint, decodePoint };

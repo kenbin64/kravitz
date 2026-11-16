@@ -13,11 +13,24 @@ function putPoint(store, point) {
   return point.key;
 }
 
-// Reading a point counts one step, so every walk can report how much work it did.
+// Reading a point counts one step, so every walk can report how much work it did. A point already fetched in
+// a batch (counter.cache, filled by readMany) costs no further read.
 function readPoint(store, key, counter) {
-  if (counter) counter.steps += 1;
-  const point = store.points.get(key);
+  const cached = counter && counter.cache ? counter.cache.get(key) : undefined;
+  if (counter && !cached) counter.steps += 1;
+  const point = cached || store.points.get(key);
   return point;
+}
+
+// Fetch several points at once when the store can (a disk store does it in one query), into counter.cache.
+function prefetch(store, keys, counter) {
+  const wanted = keys.filter(key => !(counter.cache && counter.cache.has(key)));
+  if (typeof store.readMany === 'function' && wanted.length > 1) {
+    if (!counter.cache) counter.cache = new Map();
+    for (const [key, point] of store.readMany(wanted)) counter.cache.set(key, point);
+    counter.steps += 1;
+  }
+  return counter;
 }
 
 function countPoints(store) {
@@ -32,4 +45,4 @@ function measureBytes(store) {
   return bytes;
 }
 
-module.exports = { createStore, putPoint, readPoint, countPoints, measureBytes };
+module.exports = { createStore, putPoint, readPoint, prefetch, countPoints, measureBytes };

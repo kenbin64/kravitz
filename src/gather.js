@@ -16,16 +16,16 @@ const { makeAtom, makeWhole, makeDerived } = require('./points');
 const { createKeyBook, keyOf, partsOf, isAtomValue } = require('./contentkeys');
 const { deriveKey } = require('./key');
 
-const SPAN_SIZE = 64;          // parts per junction on the length axis
+const SPAN_SIZE = 16;          // parts per junction on the length axis (options.spanSize changes it); best on disk for records and levels, 64 suits long lists of numbers
 const MIN_SHARE_BYTES = 96;    // a smaller repeat is cheaper carried in place than looked up
 
 // Gather a long run of parts into spans until it fits one level; each span part is { s: key, n: count }.
-function gatherSpans(store, parts, counts) {
+function gatherSpans(store, parts, counts, spanSize) {
   let level = parts.map((part, i) => ({ part, count: counts[i] }));
-  while (level.length > SPAN_SIZE) {
+  while (level.length > spanSize) {
     const next = [];
-    for (let i = 0; i < level.length; i += SPAN_SIZE) {
-      const group = level.slice(i, i + SPAN_SIZE);
+    for (let i = 0; i < level.length; i += spanSize) {
+      const group = level.slice(i, i + spanSize);
       const count = group.reduce((sum, entry) => sum + entry.count, 0);
       const spanParts = group.map(entry => entry.part);
       const span = makeWhole(deriveKey({ span: spanParts }), 'span', count, spanParts);
@@ -41,7 +41,8 @@ function gatherSpans(store, parts, counts) {
 function bodyOf(store, book, value, options) {
   const [shape, items] = partsOf(value);
   const parts = items.map(item => partFor(store, book, item, options));
-  const body = { shape, count: items.length, parts: gatherSpans(store, parts, parts.map(() => 1)) };
+  const spanSize = (options && options.spanSize) || SPAN_SIZE;
+  const body = { shape, count: items.length, parts: gatherSpans(store, parts, parts.map(() => 1), spanSize) };
   return body;
 }
 
